@@ -1,5 +1,23 @@
+import os
+from datetime import datetime
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
+import gspread
+from google.oauth2.service_account import Credentials
+
+# Load Google Sheets credentials
+def get_google_sheet():
+    # Define the scope
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    # Authenticate using the JSON key file
+    creds = Credentials.from_service_account_file("google-credentials.json", scopes=scope)
+    client = gspread.authorize(creds)
+    # Open the Google Sheet by name
+    sheet = client.open("Expenses").sheet1
+    return sheet
 
 # Define the /start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -16,6 +34,31 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "/export - Export expenses as a CSV file"
     )
 
+# Define the /log command
+async def log_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    try:
+        # Parse the input (e.g., "/log $50 on food")
+        text = update.message.text
+        parts = text.split(maxsplit=3)
+        if len(parts) < 4:
+            await update.message.reply_text("Invalid format. Use: /log $<amount> on <description>")
+            return
+
+        amount = parts[1].strip("$")  # Remove the dollar sign
+        description = parts[3]
+
+        # Get the current date
+        date = datetime.now().strftime("%Y-%m-%d")
+
+        # Save the expense to Google Sheets
+        sheet = get_google_sheet()
+        sheet.append_row([date, description, amount])
+
+        # Confirm the expense was logged
+        await update.message.reply_text(f"Expense logged: ${amount} on {description}")
+    except Exception as e:
+        await update.message.reply_text(f"An error occurred: {str(e)}")
+
 # Main function to start the bot
 def main() -> None:
     # Replace 'YOUR_TELEGRAM_BOT_TOKEN' with your actual bot token
@@ -24,6 +67,7 @@ def main() -> None:
     # Add command handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("log", log_expense))
 
     # Start the bot
     print("Bot is running...")

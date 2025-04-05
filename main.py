@@ -6,22 +6,38 @@ import gspread
 from google.oauth2.service_account import Credentials
 import csv
 import io
+import json
 
 # Load Google Sheets credentials securely
 def get_google_sheet():
-    # Define the correct OAuth scopes
-    scope = [
-        "https://spreadsheets.google.com/feeds",
-        "https://www.googleapis.com/auth/drive",
-        "https://www.googleapis.com/auth/spreadsheets"
-    ]
-    # Authenticate using the environment variable
-    creds = Credentials.from_service_account_file(os.getenv("GOOGLE_APPLICATION_CREDENTIALS"), scopes=scope)
-    client = gspread.authorize(creds)
-    # Open the Google Sheet by name
-    sheet = client.open("Expenses").sheet1
-    return sheet
+    # Load credentials from the environment variable
+    creds_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+    if not creds_json:
+        raise ValueError("GOOGLE_APPLICATION_CREDENTIALS environment variable is not set.")
+    
+    try:
+        # Parse the JSON string into a dictionary
+        creds_dict = json.loads(creds_json)
+        print("Parsed Credentials:", creds_dict)  # Debugging: Print parsed credentials
 
+        # Define the required OAuth scopes
+        scopes = [
+            "https://spreadsheets.google.com/feeds",
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        print("Scopes:", scopes)  # Debugging: Print scopes
+
+        # Authenticate using the credentials and scopes
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+        client = gspread.authorize(creds)
+        sheet = client.open("Expenses").sheet1
+        return sheet
+    except Exception as e:
+        print("An error occurred while loading Google Sheets credentials:", str(e))  # Debugging: Print detailed error
+        raise ValueError(f"Failed to load Google Sheets credentials: {str(e)}")
+    
+    
 # Define the /start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("Welcome to the Accounting Bot! Use /help to see available commands.")
@@ -50,6 +66,13 @@ async def log_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         amount = parts[1].strip("$")  # Remove the dollar sign
         description = parts[3]
 
+        # Validate the amount
+        try:
+            float(amount)  # Ensure the amount is a valid number
+        except ValueError:
+            await update.message.reply_text("Invalid amount. Please provide a valid number.")
+            return
+
         # Get the current date
         date = datetime.now().strftime("%Y-%m-%d")
 
@@ -75,8 +98,7 @@ async def query_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         parts = text.split("on")[1].strip()  # Split after "on"
         category = parts.split("in")[0].strip()  # Extract the category
         month = parts.split("in")[1].strip()     # Extract the month
-        # Remove any question marks or extra spaces
-        month = month.replace("?", "").strip()
+        month = month.replace("?", "").strip()   # Remove any question marks or extra spaces
 
         # Fetch all rows from the Google Sheet
         sheet = get_google_sheet()
@@ -141,15 +163,23 @@ async def export_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 # Main function to start the bot
 def main() -> None:
+    print("BOT_TOKEN:", os.getenv("BOT_TOKEN"))
+    print("GOOGLE_APPLICATION_CREDENTIALS:", os.getenv("GOOGLE_APPLICATION_CREDENTIALS"))
+
     # Replace 'YOUR_TELEGRAM_BOT_TOKEN' with your actual bot token
-    application = Application.builder().token("8157604700:AAFTME43uhOKEakaCRakd4tmx0X11SNv7yc").build()
+    BOT_TOKEN = os.getenv("BOT_TOKEN")
+    if not BOT_TOKEN:
+        raise ValueError("BOT_TOKEN environment variable is not set.")
+
+    # Build the Telegram bot application
+    application = Application.builder().token(BOT_TOKEN).build()
 
     # Add command handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("log", log_expense))
     application.add_handler(CommandHandler("query", query_expense))
-    application.add_handler(CommandHandler("export", export_expenses))  # Add the /export handler
+    application.add_handler(CommandHandler("export", export_expenses))
 
     print("Bot is running...")
     application.run_polling()

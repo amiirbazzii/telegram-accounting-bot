@@ -1,4 +1,3 @@
-
 import os
 from datetime import datetime
 from telegram import Update
@@ -61,6 +60,41 @@ async def log_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     except Exception as e:
         await update.message.reply_text(f"An error occurred: {str(e)}")
 
+
+## Define the /query command
+async def query_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    try:
+        # Parse the input (e.g., "/query How much did I spend on food in April?")
+        text = update.message.text
+        if "on" not in text or "in" not in text:
+            await update.message.reply_text("Invalid format. Use: /query How much did I spend on <category> in <month>?")
+            return
+
+        # Extract category and month from the input
+        parts = text.split("on")[1].strip()  # Split after "on"
+        category = parts.split("in")[0].strip()  # Extract the category
+        month = parts.split("in")[1].strip()     # Extract the month
+        # Remove any question marks or extra spaces
+        month = month.replace("?", "").strip()
+
+        # Fetch all rows from the Google Sheet
+        sheet = get_google_sheet()
+        rows = sheet.get_all_records()  # Returns a list of dictionaries (each row as a dictionary)
+
+        # Filter rows by category and month
+        total = 0
+        for row in rows:
+            row_date = datetime.strptime(row["Date"], "%Y-%m-%d")  # Parse the date
+            row_month = row_date.strftime("%B").lower()
+            row_category = row["Description"].lower()
+            if row_category == category.lower() and row_month == month.lower():
+                total += float(row["Amount"])
+
+        # Send the result to the user
+        await update.message.reply_text(f"You spent ${total:.2f} on {category} in {month}.")
+    except Exception as e:
+        await update.message.reply_text(f"An error occurred: {str(e)}")
+
 # Main function to start the bot
 def main() -> None:
     # Replace 'YOUR_TELEGRAM_BOT_TOKEN' with your actual bot token
@@ -70,6 +104,8 @@ def main() -> None:
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("log", log_expense))
+    application.add_handler(CommandHandler("query", query_expense))  # Add the /query handler
+
 
     # Start the bot
     print("Bot is running...")

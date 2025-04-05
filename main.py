@@ -1,3 +1,4 @@
+
 import os
 from datetime import datetime
 from telegram import Update
@@ -5,15 +6,16 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 import gspread
 from google.oauth2.service_account import Credentials
 
-# Load Google Sheets credentials
+# Load Google Sheets credentials securely
 def get_google_sheet():
-    # Define the scope
+    # Define the correct OAuth scopes
     scope = [
         "https://spreadsheets.google.com/feeds",
-        "https://www.googleapis.com/auth/drive"
+        "https://www.googleapis.com/auth/drive",
+        "https://www.googleapis.com/auth/spreadsheets"
     ]
-    # Authenticate using the JSON key file
-    creds = Credentials.from_service_account_file("google-credentials.json", scopes=scope)
+    # Authenticate using the environment variable
+    creds = Credentials.from_service_account_file(os.getenv("GOOGLE_APPLICATION_CREDENTIALS"), scopes=scope)
     client = gspread.authorize(creds)
     # Open the Google Sheet by name
     sheet = client.open("Expenses").sheet1

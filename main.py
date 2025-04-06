@@ -7,6 +7,10 @@ from google.oauth2.service_account import Credentials
 import csv
 import io
 import json
+import spacy
+
+# Load spaCy's English language model
+nlp = spacy.load("en_core_web_sm")
 
 # Load Google Sheets credentials securely
 def get_google_sheet():
@@ -37,7 +41,7 @@ def get_google_sheet():
         print("An error occurred while loading Google Sheets credentials:", str(e))  # Debugging: Print detailed error
         raise ValueError(f"Failed to load Google Sheets credentials: {str(e)}")
     
-    
+
 # Define the /start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("Welcome to the Accounting Bot! Use /help to see available commands.")
@@ -85,51 +89,58 @@ async def log_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     except Exception as e:
         await update.message.reply_text(f"An error occurred: {str(e)}")
 
-# Define the /query command
+# Define the /query command with spaCy
 async def query_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
-        # Parse the input (e.g., "/query How much did I spend on food in April?")
-        text = update.message.text
-        if "on" not in text or "in" not in text:
-            await update.message.reply_text("Invalid format. Use: /query How much did I spend on <category> in <month>?")
+        # Parse the input (e.g., "/query How much did I spend on food in May?")
+        text = update.message.text[len("/query "):].strip()
+        if not text:
+            await update.message.reply_text("Invalid format. Use: /query <your question>")
             return
 
-        # Extract category and month from the input
-        parts = text.split("on")[1].strip()  # Split after "on"
-        category = parts.split("in")[0].strip()  # Extract the category
-        month = parts.split("in")[1].strip()     # Extract the month
-        month = month.replace("?", "").strip()   # Remove any question marks or extra spaces
+        # Process the text with spaCy
+        doc = nlp(text)
+
+        # Extract entities
+        category = None
+        month = None
+        for ent in doc.ents:
+            if ent.label_ == "DATE":
+                month = ent.text.capitalize()  # Extract month (e.g., "May")
+            elif ent.label_ in ["PRODUCT", "NOUN"]:
+                category = ent.text.lower()  # Extract category (e.g., "food")
+
+        # Fallback: If no entities are detected, try simple keyword matching
+        if not category:
+            for token in doc:
+                if token.text.lower() in ["food", "travel", "groceries"]:
+                    category = token.text.lower()
+                    break
+        if not month:
+            for token in doc:
+                if token.text.lower() in [
+                    "january", "february", "march", "april", "may", "june",
+                    "july", "august", "september", "october", "november", "december"
+                ]:
+                    month = token.text.capitalize()
+                    break
+
+        if not category or not month:
+            await update.message.reply_text("I couldn't understand your query. Please try again.")
+            return
 
         # Fetch all rows from the Google Sheet
         sheet = get_google_sheet()
-        rows = sheet.get_all_records()  # Returns a list of dictionaries (each row as a dictionary)
-
-        # Debug information
-        debug_info = f"Searching for: Category='{category}', Month='{month}'\n"
-        debug_info += f"Found {len(rows)} total records\n"
+        rows = sheet.get_all_records()
 
         # Filter rows by category and month
         total = 0
-        matching_rows = []
         for row in rows:
             row_date = datetime.strptime(row["Date"], "%Y-%m-%d")  # Parse the date
-            row_month = row_date.strftime("%B").lower()
-            row_category = row["Description"].lower()
-            if row_category == category.lower() and row_month == month.lower():
+            if row["Description"].lower() == category and row_date.strftime("%B") == month:
                 total += float(row["Amount"])
-                matching_rows.append(row)
-
-        debug_info += f"Found {len(matching_rows)} matching records\n"
-        if matching_rows:
-            debug_info += "Matching records:\n"
-            for row in matching_rows:
-                debug_info += f"- {row['Date']}: ${row['Amount']} on {row['Description']}\n"
-
-        # Send the result to the user
-        await update.message.reply_text(
-            f"You spent ${total:.2f} on {category} in {month}.\n\n"
-            f"Debug information:\n{debug_info}"
-        )
+ # Send the result to the user
+        await update.message.reply_text(f"You spent ${total:.2f} on {category} in {month}.")
     except Exception as e:
         await update.message.reply_text(f"An error occurred: {str(e)}")
 

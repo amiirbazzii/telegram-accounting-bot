@@ -1,7 +1,9 @@
-python-telegram-bot==20.5
-gspread==5.11.3
-google-auth==2.24.0
-google-auth-oauthlib==1.1.0
-google-auth-httplib2==0.1.1
+python-telegram-bot==20.7
+gspread==5.12.4
+google-auth==2.27.0
+google-auth-oauthlib==1.2.0
+google-auth-httplib2==0.2.0
 requests==2.32.3
 urllib3==2.3.0
+spacy==3.7.4
+en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1.tar.gz

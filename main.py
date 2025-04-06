@@ -89,10 +89,10 @@ async def log_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     except Exception as e:
         await update.message.reply_text(f"An error occurred: {str(e)}")
 
-# Define the /query command with spaCy
+# Define the /query command with improved spaCy integration
 async def query_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
-        # Parse the input (e.g., "/query How much did I spend on food in May?")
+        # Parse the input (e.g., "/query How much did I spend on food in April?")
         text = update.message.text[len("/query "):].strip()
         if not text:
             await update.message.reply_text("Invalid format. Use: /query <your question>")
@@ -106,16 +106,17 @@ async def query_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         month = None
         for ent in doc.ents:
             if ent.label_ == "DATE":
-                month = ent.text.capitalize()  # Extract month (e.g., "May")
+                month = ent.text.capitalize()  # Extract month (e.g., "April")
             elif ent.label_ in ["PRODUCT", "NOUN"]:
                 category = ent.text.lower()  # Extract category (e.g., "food")
 
-        # Fallback: If no entities are detected, try simple keyword matching
+        # Fallback: Simple keyword matching for category and month
         if not category:
             for token in doc:
-                if token.text.lower() in ["food", "travel", "groceries"]:
+                if token.text.lower() in ["food", "travel", "groceries", "utilities"]:
                     category = token.text.lower()
                     break
+
         if not month:
             for token in doc:
                 if token.text.lower() in [
@@ -125,9 +126,9 @@ async def query_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                     month = token.text.capitalize()
                     break
 
-        if not category or not month:
-            await update.message.reply_text("I couldn't understand your query. Please try again.")
-            return
+        # Default to the current month if no month is provided
+        if not month:
+            month = datetime.now().strftime("%B")  # Current month (e.g., "October")
 
         # Fetch all rows from the Google Sheet
         sheet = get_google_sheet()
@@ -137,13 +138,21 @@ async def query_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         total = 0
         for row in rows:
             row_date = datetime.strptime(row["Date"], "%Y-%m-%d")  # Parse the date
-            if row["Description"].lower() == category and row_date.strftime("%B") == month:
-                total += float(row["Amount"])
- # Send the result to the user
-        await update.message.reply_text(f"You spent ${total:.2f} on {category} in {month}.")
+            if row_date.strftime("%B") == month:
+                if not category or row["Description"].lower() == category:
+                    total += float(row["Amount"])
+
+        # Construct the response
+        if category:
+            response = f"You spent ${total:.2f} on {category} in {month}."
+        else:
+            response = f"Total expenses in {month}: ${total:.2f}"
+
+        # Send the result to the user
+        await update.message.reply_text(response)
     except Exception as e:
         await update.message.reply_text(f"An error occurred: {str(e)}")
-
+        
 # Define the /export command
 async def export_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:

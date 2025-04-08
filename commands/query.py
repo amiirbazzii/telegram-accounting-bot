@@ -1,43 +1,35 @@
+# commands/query.py
 from datetime import datetime
 from telegram import Update
 from telegram.ext import ContextTypes
 from utils.google_sheet import get_google_sheet
-from utils.nlp import nlp
+from utils.nlp import extract_entities_and_intent
 
 async def query_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
-        text = update.message.text[len("/query "):].strip()
+        text = update.message.text.strip()
+        # Remove /query prefix if present (for command compatibility)
+        if text.startswith("/query"):
+            text = text[len("/query"):].strip()
         if not text:
-            await update.message.reply_text("Invalid format. Use: /query <your question>")
+            await update.message.reply_text("Please ask something (e.g., 'How much did I spend on food?')")
             return
 
-        doc = nlp(text)
-        category = None
-        month = None
-        for ent in doc.ents:
-            if ent.label_ == "DATE":
-                month = ent.text.capitalize()
-            elif ent.label_ in ["PRODUCT", "NOUN"]:
-                category = ent.text.lower()
+        intent, amount, category, date = extract_entities_and_intent(text)
+        
+        # Default to "query" intent if no amount (logging requires amount)
+        if intent != "query" and not amount:
+            intent = "query"
 
-        if not category:
-            for token in doc:
-                if token.text.lower() in ["food", "travel", "groceries", "utilities"]:
-                    category = token.text.lower()
-                    break
+        if intent != "query":
+            await update.message.reply_text("To log an expense, say something like 'I spent $10 on food'.")
+            return
 
-        if not month:
-            for token in doc:
-                if token.text.lower() in [
-                    "january", "february", "march", "april", "may", "june",
-                    "july", "august", "september", "october", "november", "december"
-                ]:
-                    month = token.text.capitalize()
-                    break
+        # Determine the month from the date
+        query_date = datetime.strptime(date, "%Y-%m-%d")
+        month = query_date.strftime("%B")
 
-        if not month:
-            month = datetime.now().strftime("%B")
-
+        # Fetch and filter expenses
         sheet = get_google_sheet()
         rows = sheet.get_all_records()
         total = 0
@@ -53,4 +45,4 @@ async def query_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             response = f"Total expenses in {month}: ${total:.2f}"
         await update.message.reply_text(response)
     except Exception as e:
-        await update.message.reply_text(f"An error occurred: {str(e)}")
+        await update.message.reply_text(f"Sorry, I hit an error: {str(e)}")

@@ -8,14 +8,13 @@ from utils.nlp import extract_entities_and_intent
 async def query_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         text = update.message.text.strip()
-        # Remove /query prefix if present (for command compatibility)
         if text.startswith("/query"):
             text = text[len("/query"):].strip()
         if not text:
             await update.message.reply_text("Please ask something (e.g., 'How much did I spend on food?')")
             return
 
-        intent, amount, category, date = extract_entities_and_intent(text)
+        intent, amount, description, category, related_to, date = extract_entities_and_intent(text)
         
         # Default to "query" intent if no amount (logging requires amount)
         if intent != "query" and not amount:
@@ -29,14 +28,14 @@ async def query_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         query_date = datetime.strptime(date, "%Y-%m-%d")
         month = query_date.strftime("%B")
 
-        # Fetch and filter expenses
+        # Fetch and filter expenses with new column structure
         sheet = get_google_sheet()
-        rows = sheet.get_all_records()
+        rows = sheet.get_all_records()  # Now returns dicts with Description, Date, Amount, Category, Related to
         total = 0
         for row in rows:
             row_date = datetime.strptime(row["Date"], "%Y-%m-%d")
             if row_date.strftime("%B") == month:
-                if not category or row["Description"].lower() == category:
+                if not category or row["Category"].lower() == category:
                     total += float(row["Amount"])
 
         if category:

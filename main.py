@@ -18,17 +18,16 @@ async def handle_message(update, context):
     if text.startswith('/'):
         return
     
-    intent, amount, category, date = extract_entities_and_intent(text)
+    # Unpack all 6 values returned by extract_entities_and_intent
+    intent, amount, description, category, related_to, date = extract_entities_and_intent(text)
     
     if intent == "log":
-        # Simulate context for log_expense
         await log_expense(update, context)
     elif intent == "query":
-        # Simulate context for query_expense
         await query_expense(update, context)
     else:
         await update.message.reply_text(
-            "I’m not sure what you mean. Try something like 'I spent $20 on food' or 'How much did I spend?'"
+            "I’m not sure what you mean. Try something like 'I spent $20 on a purse' or 'How much did I spend?'"
         )
 
 def main() -> None:
@@ -41,7 +40,7 @@ def main() -> None:
 
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # Command handlers (still available as fallback)
+    # Command handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("log", log_expense))

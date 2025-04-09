@@ -1,3 +1,4 @@
+# commands/export.py
 import csv
 import io
 from telegram import Update
@@ -7,14 +8,14 @@ from utils.google_sheet import get_google_sheet
 async def export_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         sheet = get_google_sheet()
-        rows = sheet.get_all_records()
+        rows = sheet.get_all_records()  # Now returns dicts with Description, Date, Amount, Category, Related to
 
         if not rows:
             await update.message.reply_text("No expenses found to export.")
             return
 
         output = io.StringIO()
-        writer = csv.DictWriter(output, fieldnames=rows[0].keys())
+        writer = csv.DictWriter(output, fieldnames=["Description", "Date", "Amount", "Category", "Related to"])
         writer.writeheader()
         writer.writerows(rows)
         output.seek(0)

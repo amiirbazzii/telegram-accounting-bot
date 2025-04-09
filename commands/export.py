@@ -1,4 +1,5 @@
 # commands/export.py
+import asyncio
 import csv
 import io
 from telegram import Update
@@ -7,8 +8,8 @@ from utils.google_sheet import get_google_sheet
 
 async def export_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
-        sheet = get_google_sheet()
-        rows = sheet.get_all_records()  # Now returns dicts with Description, Date, Amount, Category, Related to
+        sheet = await asyncio.to_thread(get_google_sheet)
+        rows = await asyncio.to_thread(sheet.get_all_records)
 
         if not rows:
             await update.message.reply_text("No expenses found to export.")

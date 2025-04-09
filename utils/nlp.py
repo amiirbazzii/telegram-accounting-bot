@@ -3,7 +3,8 @@ import spacy
 from datetime import datetime, timedelta
 import re
 
-nlp = spacy.load("en_core_web_sm")
+# Disable the parser component for potentially faster processing
+nlp = spacy.load("en_core_web_sm", disable=["parser"])
 
 CATEGORIES = {
     "food": {
@@ -114,28 +115,43 @@ def extract_entities_and_intent(text):
 
     # Extract "Related to" after amount, checking all "for" instances
     if amount_match and description:
-        post_amount_text = text[amount_match.end():].lower()
-        post_amount_doc = nlp(post_amount_text)
+        amount_end_char = amount_match.end()
         potential_related_to = None
-        for i, token in enumerate(post_amount_doc):
-            if token.text == "for" and i + 1 < len(post_amount_doc):
-                related_to_start = i + 1
-                related_to_parts = []
-                skip = False
-                for t in post_amount_doc[related_to_start:]:
-                    candidate = " ".join(related_to_parts + [t.text])
-                    # If description appears in the phrase, skip this "for" entirely
-                    if description in candidate:
-                        skip = True
-                        break
-                    if t.text in date_terms or (t.pos_ in ["PREP", "VERB"] and t.text != "for"):
-                        break
-                    related_to_parts.append(t.text)
-                if not skip and related_to_parts:  # Only set if valid and no description overlap
-                    potential_related_to = " ".join(related_to_parts)
-        # Use the last valid "for" phrase that doesn’t overlap with description
+        
+        # Find the token index corresponding to the character after the amount
+        start_token_index = -1
+        for i, token in enumerate(doc):
+            if token.idx >= amount_end_char:
+                start_token_index = i
+                break
+        
+        if start_token_index != -1:
+            # Iterate through tokens *after* the amount in the original doc
+            for i in range(start_token_index, len(doc)):
+                token = doc[i]
+                if token.text == "for" and i + 1 < len(doc):
+                    related_to_start_index = i + 1
+                    related_to_parts = []
+                    skip = False
+                    # Iterate through subsequent tokens to build the phrase
+                    for t_idx in range(related_to_start_index, len(doc)):
+                        t = doc[t_idx]
+                        candidate = " ".join(related_to_parts + [t.text])
+                        # If description appears in the phrase, skip this "for" entirely
+                        if description in candidate:
+                            skip = True
+                            break
+                        # Stop if it's a date term or a limiting POS tag (excluding "for")
+                        if t.text in date_terms or (t.pos_ in ["PREP", "VERB"] and t.text != "for"):
+                            break
+                        related_to_parts.append(t.text)
+                    
+                    if not skip and related_to_parts:  # Only set if valid and no description overlap
+                        potential_related_to = " ".join(related_to_parts)
+                        
+        # Use the last valid "for" phrase found that doesn't overlap with description
         if potential_related_to and description not in potential_related_to:
-            related_to = potential_related_to
+             related_to = potential_related_to
 
     if not description:
         description = "item"

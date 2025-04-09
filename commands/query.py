@@ -1,4 +1,5 @@
 # commands/query.py
+import asyncio
 from datetime import datetime
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -28,15 +29,22 @@ async def query_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         query_date = datetime.strptime(date, "%Y-%m-%d")
         month = query_date.strftime("%B")
 
-        # Fetch and filter expenses with new column structure
-        sheet = get_google_sheet()
-        rows = sheet.get_all_records()  # Now returns dicts with Description, Date, Amount, Category, Related to
+        # Fetch and filter expenses asynchronously
+        sheet = await asyncio.to_thread(get_google_sheet)
+        rows = await asyncio.to_thread(sheet.get_all_records)
+        
+        # Filtering in Python remains for simplicity
         total = 0
         for row in rows:
-            row_date = datetime.strptime(row["Date"], "%Y-%m-%d")
-            if row_date.strftime("%B") == month:
-                if not category or row["Category"].lower() == category:
-                    total += float(row["Amount"])
+            try:
+                # Add basic error handling for date parsing and amount conversion
+                row_date = datetime.strptime(row["Date"], "%Y-%m-%d")
+                if row_date.strftime("%B") == month:
+                    if not category or str(row["Category"]).lower() == category.lower(): # Ensure case-insensitive compare
+                        total += float(row["Amount"])
+            except (ValueError, KeyError) as parse_error:
+                print(f"Skipping row due to error: {parse_error} - Row: {row}") # Log error instead of crashing
+                continue # Skip malformed rows
 
         if category:
             response = f"You spent ${total:.2f} on {category} in {month}."

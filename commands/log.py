@@ -1,4 +1,5 @@
 # commands/log.py
+import asyncio
 from telegram import Update
 from telegram.ext import ContextTypes
 from utils.google_sheet import get_google_sheet
@@ -19,9 +20,11 @@ async def log_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             await update.message.reply_text("Please include an amount (e.g., 'I spent $20 on a purse').")
             return
 
-        # Save to Google Sheets in new format: Description | Date | Amount | Category | Related to
-        sheet = get_google_sheet()
-        sheet.append_row([description, date, str(amount), category, related_to or ""])
+        sheet = await asyncio.to_thread(get_google_sheet)
+        await asyncio.to_thread(
+            sheet.append_row,
+            [description, date, str(amount), category, related_to or ""]
+        )
 
         response = f"Expense logged: {description} for ${amount} ({category})"
         if related_to:

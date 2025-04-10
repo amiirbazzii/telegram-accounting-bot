@@ -3,13 +3,51 @@ import spacy
 from datetime import datetime, timedelta
 import re
 import logging
+from typing import Union
+
+# Helper function to parse relative weekdays
+def parse_relative_weekday(text: str) -> Union[datetime, None]:
+    today = datetime.now().date()
+    text_lower = text.lower()
+    weekday_map = {
+        "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+        "friday": 4, "saturday": 5, "sunday": 6
+    }
+    
+    match = re.search(r'(last|this|next)?\s*(monday|tuesday|wednesday|thursday|friday|saturday|sunday)', text_lower)
+    if not match:
+        return None
+
+    modifier, weekday_str = match.groups()
+    target_weekday = weekday_map.get(weekday_str)
+    if target_weekday is None:
+        return None
+
+    current_weekday = today.weekday()
+    
+    if modifier == "last":
+        days_ago = (current_weekday - target_weekday + 7) % 7
+        if days_ago == 0: days_ago = 7 # Ensure it's actually *last* week
+        target_date = today - timedelta(days=days_ago)
+    elif modifier == "next":
+        days_ahead = (target_weekday - current_weekday + 7) % 7
+        if days_ahead == 0: days_ahead = 7 # Ensure it's actually *next* week
+        target_date = today + timedelta(days=days_ahead)
+    else: # Defaults to "this" or no modifier
+        days_diff = target_weekday - current_weekday
+        target_date = today + timedelta(days=days_diff)
+        # If "this Friday" was mentioned on a Saturday, it means *next* Friday usually
+        # However, for simplicity, we'll treat "this" as the current week or upcoming day.
+        # More complex date interpretation can be added later.
+
+    return datetime.combine(target_date, datetime.min.time())
 
 nlp = spacy.load("en_core_web_sm")
 logger = logging.getLogger(__name__)
 
 CATEGORIES = {
     "food": {
-        "keywords": ["lunch", "dinner", "restaurant", "meal", "snack"],
+        "keywords": ["food", "lunch", "dinner", "restaurant", "meal", "snack"],
         "subcategories": {
             "groceries": ["fruit", "apple", "banana", "orange", "vegetable", "potato", "bread", "milk", "egg", "meat", "chicken", "fish"],
             "dining": ["pizza", "burger", "sushi", "sandwich"]
@@ -91,11 +129,16 @@ def extract_entities_and_intent(text):
         is_edible = any(term in text_lower for term in edible_terms)
         if is_edible:
             food_items_flat = [item for sublist in CATEGORIES["food"]["subcategories"].values() for item in sublist]
+            found_specific_food = False
             for token in doc:
                 if token.text in food_items_flat:
                     description = token.text
                     category = "food"
+                    found_specific_food = True
                     break
+            if not found_specific_food:
+                description = "food"
+                category = "food"
         
         if not category and any(term in text_lower for term in gift_terms):
             for token in doc:
@@ -109,29 +152,44 @@ def extract_entities_and_intent(text):
     common_date_terms = ["today", "yesterday", "tomorrow", "last month"]  # Add more as needed
     logger.debug("Starting DATE entity extraction...")
     date_found = False
-    for ent in doc.ents:
-        logger.debug(f"Found entity: '{ent.text}', Label: {ent.label_}")
-        if ent.label_ == "DATE":
-            date_text = ent.text.lower()
-            date_terms.extend(date_text.split())
-            logger.debug(f"Added DATE terms from entity: {date_text.split()}, current date_terms: {date_terms}")
-            
-            if "yesterday" in date_text:
-                date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-            elif "last month" in date_text:
-                date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
-            elif date_text in ["january", "february", "march", "april", "may", "june",
-                               "july", "august", "september", "october", "november", "december"]:
-                try:
-                    current_year = datetime.now().year
-                    parsed_date = datetime.strptime(f"{current_year} {date_text}", "%Y %B")
-                    date = parsed_date.strftime("%Y-%m-%d")
-                except ValueError:
-                    pass
-            date_found = True
-            break
+    parsed_date_obj = None # Store parsed date object
+
+    # Attempt 1: Try parsing relative weekdays first
+    parsed_date_obj = parse_relative_weekday(text)
+    if parsed_date_obj:
+        date_found = True
+        logger.debug(f"Parsed relative weekday: {parsed_date_obj.strftime('%Y-%m-%d')}")
+
+    # Attempt 2: If not found, try spaCy DATE entities
+    if not date_found:
+        for ent in doc.ents:
+            logger.debug(f"Found entity: '{ent.text}', Label: {ent.label_}")
+            if ent.label_ == "DATE":
+                date_text = ent.text.lower()
+                date_terms.extend(date_text.split())
+                logger.debug(f"Added DATE terms from entity: {date_text.split()}, current date_terms: {date_terms}")
+                
+                # Handle specific DATE entities recognized by spaCy
+                # Note: spaCy's date parsing is complex, this handles simple cases
+                if "yesterday" in date_text:
+                    parsed_date_obj = datetime.now() - timedelta(days=1)
+                elif "last month" in date_text: # Approximate
+                    parsed_date_obj = datetime.now() - timedelta(days=30)
+                elif date_text in ["january", "february", "march", "april", "may", "june",
+                                   "july", "august", "september", "october", "november", "december"]:
+                    try:
+                        current_year = datetime.now().year
+                        parsed_date_obj = datetime.strptime(f"{current_year} {date_text}", "%Y %B")
+                    except ValueError:
+                        pass # Ignore if parsing fails
+                # Add more specific spaCy DATE entity parsing here if needed
+                
+                if parsed_date_obj: 
+                    date_found = True
+                    logger.debug(f"Parsed date from spaCy DATE entity '{date_text}': {parsed_date_obj.strftime('%Y-%m-%d')}")
+                    break # Stop after first successful DATE entity parse
     
-    # Fallback: Check for common date terms if no DATE entity is found
+    # Attempt 3: Fallback to common date terms if still not found
     if not date_found:
         text_lower = text.lower()
         for term in common_date_terms:
@@ -139,15 +197,27 @@ def extract_entities_and_intent(text):
                 date_terms.append(term)
                 logger.debug(f"Added common date term: '{term}', current date_terms: {date_terms}")
                 if term == "yesterday":
-                    date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+                    parsed_date_obj = datetime.now() - timedelta(days=1)
                 elif term == "today":
-                    date = datetime.now().strftime("%Y-%m-%d")
+                    parsed_date_obj = datetime.now()
                 elif term == "tomorrow":
-                    date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-                elif term == "last month":
-                    date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
-                break
-    logger.debug(f"Final date_terms list: {date_terms}")
+                    parsed_date_obj = datetime.now() + timedelta(days=1)
+                elif term == "last month": # Approximate
+                    parsed_date_obj = datetime.now() - timedelta(days=30)
+                
+                if parsed_date_obj:
+                    date_found = True
+                    logger.debug(f"Parsed date from common term '{term}': {parsed_date_obj.strftime('%Y-%m-%d')}")
+                    break # Stop after first common term match
+
+    logger.debug(f"Final date_terms list associated with found DATE entity/term: {date_terms}")
+    
+    # Format the final date string if a date was successfully parsed
+    if parsed_date_obj:
+        date = parsed_date_obj.strftime("%Y-%m-%d")
+    else:
+        date = datetime.now().strftime("%Y-%m-%d") # Default to today if nothing found
+        logger.debug("No specific date found, defaulting to today.")
 
     # Extract "Related to" after amount
     if amount_match and description:

@@ -284,3 +284,7 @@ if __name__ == "__main__":
         print(f"\n--- Processing Input: {input_text} ---")
         intent, amount, desc, cat, rel, date = extract_entities_and_intent(input_text)
         print(f"---> Result: Intent: {intent}, Amount: {amount}, Description: {desc}, Category: {cat}, Related to: {rel}, Date: {date}")
+
+
+
+        

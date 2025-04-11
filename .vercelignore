@@ -1,0 +1,30 @@
+# Local development environment
+venv/
+env/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Local configuration files - they'll be set in Vercel dashboard
+.env
+.env.*
+
+# Test files
+test_*.py
+
+# Git files
+.git/
+.gitignore
+
+# Local IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Cached data
+.cache/ 
